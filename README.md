@@ -1,8 +1,45 @@
 # Extractor
 
-Watches **OpenRouter** free models (`$0` prompt + `$0` completion) every 10 minutes and alerts your **Telegram bot** when new ones appear.
+Watches **free LLM models across 5 providers** every 10 minutes and alerts your **Telegram bot** when new ones appear.
+
+**Output per model:** source · model id · name · context length · modality · pricing · details (reasoning, tools, aliases...).
 
 Stdlib only — no `pip install`. Terminal only — no UI. Linux + Windows.
+
+---
+
+## Providers (verified live 7 Nov 2026)
+
+| Provider | Listing endpoint (keyless) | What's included | Free = |
+|---|---|---|---|
+| OpenRouter | `openrouter.ai/api/v1/models` | 16 models | `$0` prompt + `$0` completion |
+| Pollinations | `text.pollinations.ai/models` | 1 model (`openai-fast`, anonymous tier, no signup) | no key needed at all |
+| Sambanova | `api.sambanova.ai/v1/models` | 5 models (Meta-Llama-3.3-70B, Qwen, etc.) | free endpoint, keyless list |
+| DeepInfra | `api.deepinfra.com/v1/openai/models` | 178 models | listing public; inference needs a key (flagged `[key required]`) |
+| Featherless | `featherless.ai/api/v1/models` | 0 today (10,244 listed, none $0-priced right now) | `$0`-priced subset — watched for new ones |
+
+**Why not Groq / Cerebras / Together / Fireworks / HuggingFace / Chutes / Ollama / NVIDIA NIM?**
+Their model listings return `401 Invalid API Key` without an account key. Since extractor is keyless by design (only your Telegram token is stored), those can't be watched. If you add a provider API key later, that's a small code change — the normaliser pattern in `extractor.py` is built for it.
+
+**If a provider is down or changes shape:** that source is skipped for that cycle with a log line. The watcher never dies because one provider failed.
+
+---
+
+## Sample output
+
+```
+Free models across 5 providers (200 total):
+OpenRouter (16):
+- liquid/lfm-3-1.7b:free
+  LiquidAI: LFM3-1.7B (free) | ctx=262144 | text->text | $0/M in, $0/M out
+  created=1794009477 reasoning=True hugging_face=LiquidAI/LFM3-1.7B
+Pollinations (1):
+- openai-fast
+  GPT-OSS 20B Reasoning LLM (OVH) | ctx=n/a | text->text | free (no key)
+  tier=anonymous reasoning=True tools=True vision=False aliases=openai,gpt-oss
+```
+
+First run sends the **full** list. Later runs send only models that are **new** since the last check (tracked per provider — the same model id on two providers counts as two entries).
 
 ---
 

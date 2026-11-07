@@ -1,8 +1,27 @@
 """Unit tests for extractor. Stdlib unittest — run: python -m unittest discover -s tests -v"""
 
 import unittest
+from unittest.mock import patch
 
-from extractor import decrypt, encrypt, format_models, is_free
+from extractor import (
+    PROVIDERS,
+    decrypt,
+    encrypt,
+    fetch_all,
+    format_all,
+    format_models,
+    is_free,
+    model_key,
+)
+
+
+def _m(id_, source="OpenRouter", **kw):
+    base = {"source": source, "id": id_, "name": id_.title(),
+            "context_length": 128000, "modality": "text->text",
+            "pricing": {"prompt": "0", "completion": "0"},
+            "details": "test", "key_required": False}
+    base.update(kw)
+    return base
 
 
 class TestIsFree(unittest.TestCase):
@@ -45,15 +64,76 @@ class TestSecrets(unittest.TestCase):
 
 
 class TestFormat(unittest.TestCase):
-    def test_format_lists_ids(self):
-        out = format_models([{"id": "a/b:free", "name": "Model A"}, {"id": "c/d:free", "name": "Model B"}])
+    def test_format_lists_source_model_details(self):
+        out = format_models([_m("a/b:free")], "OpenRouter")
+        self.assertIn("OpenRouter", out)
         self.assertIn("a/b:free", out)
-        self.assertIn("Model A", out)
-        self.assertIn("2", out)  # count in header
+        self.assertIn("ctx=128000", out)
+        self.assertIn("text->text", out)
 
-    def test_format_truncates_long(self):
-        models = [{"id": f"m{i}/x", "name": "N" * 100} for i in range(200)]
-        self.assertLessEqual(len(format_models(models)), 4000)
+    def test_format_key_required_flag(self):
+        out = format_models([_m("x/y", key_required=True)])
+        self.assertIn("[key required]", out)
+
+    def test_format_all_totals_and_caps(self):
+        by = {"P1": [_m(f"m{i}/x") for i in range(300)], "P2": [_m("z/z", source="P2")]}
+        out = format_all(by)
+        self.assertIn("301 total", out)
+        self.assertLessEqual(len(out), 4000)
+
+    def test_format_models_empty_is_empty(self):
+        self.assertEqual(format_models([]), "")
+
+
+class TestProviders(unittest.TestCase):
+    def test_providers_have_required_fields(self):
+        for p in PROVIDERS:
+            self.assertIn("name", p)
+            self.assertIn("url", p)
+            self.assertTrue(callable(p["norm"]))
+
+    def test_fetch_all_survives_one_provider_down(self):
+        """A dead source must not kill the cycle — others still return."""
+        fake_bodies = {
+            "OpenRouter": {"data": [{"id": "a/b:free", "name": "A", "context_length": 1000,
+                                     "architecture": {"modality": "text->text"},
+                                     "pricing": {"prompt": "0", "completion": "0"},
+                                     "created": 1, "reasoning": {}, "hugging_face_id": ""}]},
+            "Pollinations": [{"name": "openai-fast", "description": "d", "tier": "anonymous"}],
+            "Sambanova": {"data": [{"id": "m1", "context_length": 1000, "owned_by": "o",
+                                    "max_completion_tokens": 100, "pricing": {}}]},
+            "DeepInfra": {"data": [{"id": "d/1", "owned_by": "o", "created": 0, "metadata": {}}]},
+            "Featherless": {"data": []},
+        }
+        def fake_get(url, timeout=30):
+            for key, body in fake_bodies.items():
+                if key.lower() in url.lower():
+                    return body
+            raise RuntimeError("no such provider")
+        with patch("extractor._http_get", side_effect=fake_get):
+            out = fetch_all()
+        self.assertEqual(len(out["OpenRouter"]), 1)
+        self.assertEqual(out["OpenRouter"][0]["source"], "OpenRouter")
+        self.assertEqual(out["Pollinations"][0]["id"], "openai-fast")
+        self.assertEqual(len(out["Sambanova"]), 1)
+        self.assertTrue(out["DeepInfra"][0]["key_required"])
+
+    def test_fetch_all_one_down_others_ok(self):
+        def flaky(url, timeout=30):
+            if "openrouter" in url:
+                raise RuntimeError("provider down")
+            if "pollinations" in url:
+                return [{"name": "m", "description": "", "tier": "anonymous"}]
+            return {"data": []}
+        with patch("extractor._http_get", side_effect=flaky):
+            out = fetch_all()
+        self.assertEqual(out["OpenRouter"], [])
+        self.assertEqual(len(out["Pollinations"]), 1)
+
+    def test_model_key_scopes_by_provider(self):
+        self.assertNotEqual(model_key(_m("same-id", "OpenRouter")),
+                            model_key(_m("same-id", "Sambanova")))
+        self.assertEqual(model_key(_m("x", "OpenRouter")), "OpenRouter:x")
 
 
 if __name__ == "__main__":
