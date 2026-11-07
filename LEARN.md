@@ -2,7 +2,7 @@
 
 ## What it is
 
-OpenRouter free-model watcher → Telegram alerts. Checks `https://openrouter.ai/api/v1/models` every 10 minutes (configurable), sends the full free list on first run, then only NEW models. Terminal only, stdlib only, Linux + Windows. Token + chat id stored encrypted at rest with a master password; 3 wrong passwords wipes them.
+Multi-provider free-model watcher → Telegram alerts. Checks 5 keyless listings (OpenRouter, Pollinations, Sambanova, DeepInfra, Featherless) every 10 minutes (configurable), sends the full list per provider on first run, then only NEW models. Each entry shows source · model · details (context, modality, pricing, reasoning...). Terminal only, stdlib only, Linux + Windows. Token + chat id stored encrypted at rest with a master password; 3 wrong passwords wipes them.
 
 **Read this first, then go file-by-file in the repo.**
 
